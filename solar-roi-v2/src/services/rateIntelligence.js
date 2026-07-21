@@ -90,9 +90,13 @@ function extractJson(text) {
   return start >= 0 && end > start ? stripped.slice(start, end + 1) : stripped;
 }
 
+function validHours(hours) {
+  return Array.isArray(hours) && hours.length === 2 && hours.every((h) => Number.isFinite(Number(h)));
+}
+
 // Coerce AI output into the engine's rate shape; reject candidates missing the
-// fields the chosen rate type requires.
-function normalizeCandidate(c) {
+// fields the chosen rate type requires. Exported for tests.
+export function normalizeCandidate(c) {
   const r = c?.rates?.standard;
   if (!c?.utility || !r?.type) return null;
   const rate = {
@@ -106,8 +110,14 @@ function normalizeCandidate(c) {
     rate.tiers = r.tiers.map((t) => ({ limit: t.limit == null ? Infinity : Number(t.limit), rate: Number(t.rate) || 0 }));
   }
   if (r.type === 'tou') {
-    if (!r.periods?.peak?.hours || r.periods?.offPeak?.rate == null) return null;
+    if (!validHours(r.periods?.peak?.hours) || r.periods?.offPeak?.rate == null) return null;
     rate.periods = r.periods;
+    const s = r.periods.superOffPeak;
+    if (s && (!validHours(s.hours) || s.rate == null)) {
+      // Drop a malformed super-off-peak rather than rejecting the whole candidate.
+      const { superOffPeak, ...rest } = r.periods;
+      rate.periods = rest;
+    }
   }
   return {
     utility: c.utility,

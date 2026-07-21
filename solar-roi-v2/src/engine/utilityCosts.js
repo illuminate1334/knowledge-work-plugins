@@ -10,8 +10,12 @@ import { HOURLY_PROFILE } from './assumptions.js';
 export function periodForHour(hour, periods) {
   if (hour >= periods.peak.hours[0] && hour < periods.peak.hours[1]) return 'peak';
   const s = periods.superOffPeak;
-  // Super-off-peak typically wraps midnight, e.g. hours: [22, 6].
-  if (s && (hour >= s.hours[0] || hour < s.hours[1])) return 'superOffPeak';
+  if (s) {
+    const [start, end] = s.hours;
+    // Window may wrap midnight (e.g. [22, 6]) or not (e.g. [1, 6]).
+    const inWindow = start > end ? hour >= start || hour < end : hour >= start && hour < end;
+    if (inWindow) return 'superOffPeak';
+  }
   return 'offPeak';
 }
 

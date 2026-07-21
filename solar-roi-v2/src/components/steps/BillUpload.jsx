@@ -34,7 +34,7 @@ export default function BillUpload({ bills, setBills, next, back }) {
         setBills(
           bills.map((b, i) => ({
             ...b,
-            usage: String(parseFloat(rows[i][usageCol]) || ''),
+            usage: String(parseFloat(String(rows[i][usageCol]).replace(/,/g, '')) || ''),
             cost: String(parseFloat(String(rows[i][costCol]).replace(/[$,]/g, '')) || ''),
           })),
         );

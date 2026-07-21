@@ -38,6 +38,17 @@ describe('utilityCosts', () => {
     expect(periodForHour(10, TOU.periods)).toBe('offPeak');
   });
 
+  it('non-wrapping super-off-peak window stays bounded', () => {
+    const periods = { ...TOU.periods, superOffPeak: { hours: [1, 6], rate: 0.07 } };
+    expect(periodForHour(3, periods)).toBe('superOffPeak');
+    expect(periodForHour(0, periods)).toBe('offPeak');
+    expect(periodForHour(8, periods)).toBe('offPeak');
+    expect(periodForHour(12, periods)).toBe('offPeak');
+    expect(periodForHour(21, periods)).toBe('offPeak');
+    expect(periodForHour(23, periods)).toBe('offPeak');
+    expect(periodForHour(16, periods)).toBe('peak');
+  });
+
   it('avgRetailRate excludes the fixed charge', () => {
     const rate = { type: 'flat', rate: 0.13, fixedCharge: 50 };
     expect(avgRetailRate(12000, rate)).toBeCloseTo(0.13);
