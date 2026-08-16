@@ -93,6 +93,72 @@ describe('solar shape', () => {
   });
 });
 
+describe('weather-driven production', () => {
+  // A deliberately un-clear-sky year: a wet summer and a bright winter. If the
+  // model ignored these weights the months would follow geometry instead.
+  const ODD = [900, 850, 700, 600, 400, 300, 300, 350, 500, 700, 850, 950];
+
+  it('redistributes energy across months to match measured weather', () => {
+    const shape = buildProductionShape(12000, {
+      latitude: 38.6, tiltDegrees: 25, orientation: 'south', monthlyWeights: ODD,
+    });
+    const monthly = shape.map((day, m) => day.reduce((x, y) => x + y, 0) * DAYS_IN_MONTH[m]);
+    const total = monthly.reduce((x, y) => x + y, 0);
+    expect(total).toBeCloseTo(12000, 4);
+    // January now beats June, the reverse of the clear-sky ordering.
+    expect(monthly[0]).toBeGreaterThan(monthly[5]);
+    const wSum = ODD.reduce((x, y) => x + y, 0);
+    expect(monthly[0]).toBeCloseTo((12000 * ODD[0]) / wSum, 4);
+  });
+
+  it('keeps the intra-day curve geometric even when months are reweighted', () => {
+    const shape = buildProductionShape(12000, {
+      latitude: 38.6, tiltDegrees: 25, orientation: 'south', monthlyWeights: ODD,
+    });
+    expect(shape[5][2]).toBe(0);  // still nothing at 2am
+    const peak = shape[5].indexOf(Math.max(...shape[5]));
+    expect(peak).toBeGreaterThanOrEqual(11);
+    expect(peak).toBeLessThanOrEqual(13);
+  });
+
+  it('ignores malformed weights and falls back to clear sky', () => {
+    const clear = buildProductionShape(12000, { latitude: 38.6, tiltDegrees: 25, orientation: 'south' });
+    for (const bad of [[1, 2, 3], new Array(12).fill(0), new Array(12).fill(NaN), null]) {
+      const s = buildProductionShape(12000, {
+        latitude: 38.6, tiltDegrees: 25, orientation: 'south', monthlyWeights: bad,
+      });
+      expect(s[5][12]).toBeCloseTo(clear[5][12], 6);
+    }
+  });
+
+  it('does not double-count orientation when yield already accounts for it', () => {
+    const args = { yearlyUsage: 12000, roofSqFt: 2000, shade: 'minimal', a };
+    // West-facing: the clear-sky path applies a 0.85 orientation derate...
+    const assumed = sizeSystem({ ...args, orientation: 'west' });
+    // ...but a measured yield for a west-facing array already includes it.
+    const measured = sizeSystem({ ...args, orientation: 'west', measuredYieldPerKW: a.baseYieldKWhPerKW });
+    expect(assumed.effectiveYield).toBeCloseTo(a.baseYieldKWhPerKW * 0.85 * 0.95, 6);
+    expect(measured.effectiveYield).toBeCloseTo(a.baseYieldKWhPerKW * 0.95, 6);
+    expect(measured.usingMeasuredYield).toBe(true);
+  });
+
+  it('flows weather through buildModel and changes the outcome', () => {
+    const inputs = {
+      monthlyUsage: MONTHLY,
+      rate: FLAT,
+      netMetering: { available: true, creditRate: 1 },
+      property: { roofSqFt: 1200, orientation: 'south', shade: 'minimal' },
+      financing: { type: 'cash', applyITC: true },
+      assumptions: a,
+    };
+    const sunny = buildModel({ ...inputs, weather: { annualKWhPerKW: 1750, monthly: ODD, source: 'test' } });
+    const cloudy = buildModel({ ...inputs, weather: { annualKWhPerKW: 950, monthly: ODD, source: 'test' } });
+    expect(sunny.sized.usingMeasuredYield).toBe(true);
+    expect(sunny.year1Production).toBeGreaterThan(cloudy.year1Production);
+    expect(sunny.solarOnly.base.npv).toBeGreaterThan(cloudy.solarOnly.base.npv);
+  });
+});
+
 describe('hourly netting (the v2 structural flaw)', () => {
   const loadShape = buildLoadShape(MONTHLY);
   const productionShape = buildProductionShape(11000, { latitude: 38.6, tiltDegrees: 25, orientation: 'south' });

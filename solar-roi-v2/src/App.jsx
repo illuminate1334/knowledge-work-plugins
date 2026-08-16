@@ -7,6 +7,7 @@ import ModeSelector from './components/ModeSelector.jsx';
 import BillsPanel from './components/panels/BillsPanel.jsx';
 import RatePanel from './components/panels/RatePanel.jsx';
 import PropertyPanel from './components/panels/PropertyPanel.jsx';
+import WeatherPanel from './components/panels/WeatherPanel.jsx';
 import QuotePanel from './components/panels/QuotePanel.jsx';
 import ProposalPanel from './components/panels/ProposalPanel.jsx';
 import Results from './components/results/Results.jsx';
@@ -30,6 +31,7 @@ export default function App() {
     firstYearSavings: 1800, lifetimeSavings: 65000, monthlyPayment: 0, includesLifecycleCosts: false,
   });
   const [proposal, setProposal] = useState({ preparedFor: '', preparedBy: '', company: '' });
+  const [weather, setWeather] = useState(null);
 
   const detailedUsage = bills.map((b) => parseFloat(b.usage) || 0);
   const hasDetailed = detailedUsage.every((u) => u > 0);
@@ -53,11 +55,12 @@ export default function App() {
         financing,
         assumptions,
         quote: mode === 'audit' ? quote : null,
+        weather,
       });
     } catch (err) {
       return { error: err.message };
     }
-  }, [ready, JSON.stringify(monthlyUsage), rateInfo, property, financing, assumptions, mode, quote]);
+  }, [ready, JSON.stringify(monthlyUsage), rateInfo, property, financing, assumptions, mode, quote, weather]);
 
   // Only meaningful when the user typed real bill costs.
   const gate = useMemo(() => {
@@ -90,6 +93,11 @@ export default function App() {
             property={property} setProperty={setProperty}
             financing={financing} setFinancing={setFinancing}
             assumptions={assumptions} setAssumptions={setAssumptions}
+          />
+          <WeatherPanel
+            weather={weather} setWeather={setWeather}
+            property={property} assumptions={assumptions} setAssumptions={setAssumptions}
+            coordinates={rateInfo?.coordinates ?? null}
           />
           {mode === 'audit' && <QuotePanel quote={quote} setQuote={setQuote} />}
           {mode === 'advise' && <ProposalPanel proposal={proposal} setProposal={setProposal} />}

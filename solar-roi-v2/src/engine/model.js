@@ -21,6 +21,7 @@ export function buildModel({
   financing,
   assumptions: a,
   quote = null,        // audit mode: { systemKW, totalPrice, ... }
+  weather = null,      // { annualKWhPerKW, monthly[12], source, ... }
 }) {
   const yearlyUsage = monthlyUsage.reduce((s, v) => s + (v || 0), 0);
   const creditRate = netMetering?.available ? (netMetering.creditRate ?? 1) : 0;
@@ -34,6 +35,7 @@ export function buildModel({
     orientation: property.orientation,
     shade: property.shade,
     a,
+    measuredYieldPerKW: weather?.annualKWhPerKW ?? null,
   });
   const systemKW = quote?.systemKW > 0 ? quote.systemKW : sized.systemKW;
   const year1Production = quote?.systemKW > 0
@@ -44,6 +46,7 @@ export function buildModel({
     latitude: a.latitude,
     tiltDegrees: a.tiltDegrees,
     orientation: property.orientation,
+    monthlyWeights: weather?.monthly ?? null,
   });
 
   const solarGross = quote?.totalPrice > 0 ? quote.totalPrice : grossSystemCost(systemKW, a);
@@ -100,6 +103,7 @@ export function buildModel({
   return {
     yearlyUsage,
     creditRate,
+    weather,
     sized,
     systemKW,
     year1Production,

@@ -22,10 +22,12 @@ Respond ONLY with raw JSON (no markdown fences, no preamble) in this schema:
       "periods":{"peak":{"hours":[14,19],"rate":0.0},"offPeak":{"rate":0.0},"superOffPeak":{"hours":[22,6],"rate":0.0}}}
   },
   "netMetering": {"available":true,"creditRate":1.0,"description":""},
+  "coordinates": {"lat":0.0,"lon":0.0},
   "asOfDate": "YYYY-MM",
   "sources": ["url"]
 }]}
-Rules: rates in $/kWh. Omit "tiers" unless type is "tiered"; omit "periods" unless
+Rules: rates in $/kWh. "coordinates" must be the approximate latitude/longitude of
+the address itself, used for a solar-resource lookup. Omit "tiers" unless type is "tiered"; omit "periods" unless
 type is "tou"; omit "superOffPeak" if the plan has none. The last tier's "limit"
 must be null. "creditRate" is the export credit as a fraction of the retail rate.
 Include up to 3 candidates if the address sits near a service-territory boundary.`;
@@ -128,6 +130,10 @@ export function normalizeCandidate(c) {
       creditRate: c.netMetering?.creditRate ?? 1.0,
       description: c.netMetering?.description || '',
     },
+    coordinates:
+      Number.isFinite(Number(c.coordinates?.lat)) && Number.isFinite(Number(c.coordinates?.lon))
+        ? { lat: Number(c.coordinates.lat), lon: Number(c.coordinates.lon) }
+        : null,
     asOfDate: c.asOfDate || null,
     sources: Array.isArray(c.sources) ? c.sources : [],
   };

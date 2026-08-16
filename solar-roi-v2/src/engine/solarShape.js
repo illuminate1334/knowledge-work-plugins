@@ -49,7 +49,14 @@ export function poaFactor({ lat, dec, hour, tilt, azimuth }) {
 
 // Returns daily[month][hour] = kWh produced in that hour on an average day of
 // that month, such that Σ_month days[month] × Σ_hour daily = annualProduction.
-export function buildProductionShape(annualProduction, { latitude, tiltDegrees, orientation }) {
+//
+// monthlyWeights (optional): 12 relative values from measured weather data
+// (e.g. PVWatts ac_monthly). When supplied they set how the annual total is
+// DISTRIBUTED ACROSS MONTHS — capturing cloud climatology that clear-sky
+// geometry cannot know — while the within-day curve stays geometric, because
+// the sun's path really is geometry. Without them, months are weighted by
+// clear-sky irradiance alone.
+export function buildProductionShape(annualProduction, { latitude, tiltDegrees, orientation, monthlyWeights = null }) {
   const azimuth = ORIENTATION_AZIMUTH[orientation] ?? 0;
   const raw = REP_DAY.map((day) => {
     const dec = declination(day);
@@ -57,6 +64,23 @@ export function buildProductionShape(annualProduction, { latitude, tiltDegrees, 
       poaFactor({ lat: latitude, dec, hour, tilt: tiltDegrees, azimuth }),
     );
   });
+
+  const valid =
+    Array.isArray(monthlyWeights) &&
+    monthlyWeights.length === 12 &&
+    monthlyWeights.every((w) => Number.isFinite(w) && w >= 0) &&
+    monthlyWeights.some((w) => w > 0);
+
+  if (valid) {
+    const wSum = monthlyWeights.reduce((x, y) => x + y, 0);
+    return raw.map((dayCurve, m) => {
+      const dayTotal = dayCurve.reduce((x, y) => x + y, 0);
+      const monthEnergy = (annualProduction * monthlyWeights[m]) / wSum;
+      if (dayTotal <= 0) return dayCurve.map(() => 0);
+      // Spread this month's measured energy over its geometric day-shape.
+      return dayCurve.map((v) => (monthEnergy * v) / dayTotal / DAYS_IN_MONTH[m]);
+    });
+  }
 
   const total = raw.reduce(
     (sum, dayCurve, m) => sum + DAYS_IN_MONTH[m] * dayCurve.reduce((a, b) => a + b, 0),

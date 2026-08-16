@@ -20,10 +20,11 @@ npm run dev       # http://localhost:5173
 npm test          # engine unit tests
 ```
 
-For the AI rate lookup, create `.env.local`:
+For the AI rate lookup and the weather lookup, create `.env.local`:
 
 ```
 VITE_ANTHROPIC_API_KEY=sk-ant-...
+VITE_NREL_API_KEY=...        # free at developer.nrel.gov/signup — optional
 ```
 
 Without a key the app works fine — rate entry falls back to manual. The lookup
@@ -68,6 +69,22 @@ don't, the lender re-amortizes and the payment jumps. Modelled explicitly.
 **Ownership costs.** Inverter replacement, O&M, insurance, battery replacement,
 and optional roof rework — all landing in the years they actually occur, inside
 the payback window.
+
+**Location-specific solar resource.** Without weather data the model assumes one
+specific yield (kWh/kW/yr) for everywhere on earth, so Seattle and Phoenix come
+out the same. Supplying real monthly production fixes both the annual magnitude
+and the seasonal distribution — clear-sky geometry cannot know that a Pacific
+Northwest December is overcast. Three ways in, in order of convenience:
+
+1. **Fetch from NREL PVWatts** — needs a free API key in `.env.local`.
+2. **Paste twelve monthly kWh figures** — run [pvwatts.nrel.gov](https://pvwatts.nrel.gov)
+   in your own browser and paste the monthly output. No key, no API call.
+3. **Skip it** — the clear-sky model still runs, and says so.
+
+Because PVWatts is given the array's tilt and azimuth, its yield already
+accounts for orientation; the model detects this and does not apply the
+orientation derate a second time. The intra-day curve stays geometric even when
+weather reweights the months, because the sun's path really is geometry.
 
 ## What you walk away with
 
@@ -120,8 +137,18 @@ bills *imply* your rate is, rather than just refusing. See
 
 ## Limitations
 
-- Clear-sky irradiance proxy; no weather, soiling, or snow data. Annual output
-  comes from the yield assumption, so only the intra-day *shape* is modelled.
+- **The PVWatts network adapter has not been executed against the live
+  endpoint.** It is written to the documented v8 contract and its response
+  handling is unit-tested against a fixture, but the environment this was built
+  in blocks `developer.nrel.gov`. Verify it once before trusting it:
+  `curl "https://developer.nrel.gov/api/pvwatts/v8.json?api_key=DEMO_KEY&lat=38.95&lon=-92.33&system_capacity=4&azimuth=180&tilt=25&array_type=1&module_type=0&losses=14&timeframe=monthly"`.
+  If the parameter names have drifted, only `weatherData.js` needs changing.
+  The paste path needs no network and is unaffected.
+- Weather is applied at **monthly** resolution. Real hourly TMY data would also
+  capture that (say) cloudy mornings differ from cloudy afternoons, which shifts
+  the self-consumption split a little. Monthly captures the large effect.
+- Without weather data: clear-sky irradiance proxy, no soiling or snow, and one
+  global yield assumption.
 - Load shape within a day is a generic residential curve scaled by your real
   monthly kWh. Actual interval data would be better; most people don't have it.
 - Tariff changes, home sale before payback, and roof failure are named as risks
