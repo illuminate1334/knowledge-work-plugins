@@ -28,9 +28,14 @@ Rules that make it work:
 3. **A reconciliation gate sits between confirmation and consequence.** Before
    the confirmed data drives anything, the system checks it against ground truth
    the user already has (here: 12 months of actual bills, modeled vs actual).
-   Within 3% → proceed; within 10% → warn; beyond → block with a specific
-   message about what's probably wrong. This catches both AI mistakes and user
-   typos with one mechanism.
+   Within 3% → proceed; within 10% → warn; beyond → flag loudly. This catches
+   both AI mistakes and user typos with one mechanism.
+
+   **A gate that only says "wrong" is half a gate.** When reconciliation fails,
+   invert the model and report what the ground truth *implies* — here, the
+   effective $/kWh the user's own bills work out to, net of the fixed charge.
+   The user can then correct the input in one step instead of guessing. Any
+   gate you build should answer "so what should it be?", not just "no".
 4. **Every failure path lands on the manual escape hatch.** No API key, network
    error, refusal, unparseable response — all return
    `{candidates: [], error: "… — enter manually"}`, never a dead end.
@@ -64,4 +69,7 @@ it's the current live config plus the CR's stated intent. The gate converts
 - [ ] Manual entry path with parity to the AI path
 - [ ] Reconciliation gate against user-held ground truth, with graduated
       thresholds (pass / warn / block) and a specific block message
+- [ ] Gate failures report the implied correct value, not just the discrepancy
 - [ ] All service failures land on the manual path, never a dead end
+- [ ] One orchestrator function the UI and the tests both call, so no modelling
+      logic can drift into components (here: `engine/model.js`)

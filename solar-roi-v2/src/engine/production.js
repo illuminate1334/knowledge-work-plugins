@@ -14,6 +14,7 @@ export function sizeSystem({ yearlyUsage, roofSqFt, orientation, shade, a }) {
     year1Production: systemKW * effectiveYield,
     derate,
     effectiveYield,
+    roofMaxKW,
     roofLimited: targetKW > roofMaxKW,
     offsetPct: Math.min(1, (systemKW * effectiveYield) / yearlyUsage),
   };

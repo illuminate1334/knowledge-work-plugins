@@ -1,70 +1,106 @@
-import { loanPayment } from './financing.js';
+import { loanSchedule, annualDebtService } from './financing.js';
+import { itcSchedule } from './incentives.js';
+import { lifecycleCost } from './lifecycle.js';
+import { solarSavings } from './netting.js';
+import { dispatch } from './battery.js';
+import { scaleShape } from './loadShape.js';
 import { SCENARIOS } from './assumptions.js';
 
-// 25-year cash-flow projection. Fixes vs v1:
-// - escalator is a cumulative multiplier (v1's Math.pow placement compounded wrong)
-// - ITC actually reduces capex
-// - loan payments flow through the years they're owed
-// - NPV computed at the assumption-panel discount rate
+// 25-year cash flow built from first principles:
+//   savings   = (bill without solar) − (bill with solar), netted hour by hour
+//   ITC       = arrives when tax liability can absorb it, not as a capex discount
+//   lifecycle = inverter, O&M, battery, roof rework — real money, real years
+//   debt      = re-amortizing solar-loan schedule, including the ITC paydown trap
 export function project({
-  baseUsage,            // current annual kWh
-  year1Production,      // kWh from sizeSystem
-  avgRetailRate,        // $/kWh from utilityCosts.avgRetailRate
-  nmCreditRate,         // export credit as fraction of retail (1.0 = full net metering)
-  batteryAnnual,        // $/yr from batteryEconomics (0 if no battery)
-  grossCost,            // system (+battery) cost before incentives
-  scenario,             // {cost, consumption} growth rates
-  financing,            // {type:'cash'} | {type:'loan', apr, termYears, down, applyITC}
-  a,                    // assumptions
+  loadShape,
+  productionShape,
+  rate,
+  creditRate,
+  systemKW,
+  grossCost,
+  hasBattery = false,
+  scenario,
+  financing,
+  a,
 }) {
   const applyITC = financing.applyITC !== false;
-  const netCapex = grossCost * (1 - (applyITC ? a.itcRate : 0));
+  const itc = itcSchedule(grossCost, a, { apply: applyITC });
+
   const isLoan = financing.type === 'loan';
-  const principal = isLoan ? Math.max(0, netCapex - (financing.down || 0)) : 0;
-  const pmt = isLoan ? loanPayment(principal, financing.apr, financing.termYears) : 0;
-  const upfront = isLoan ? (financing.down || 0) : netCapex;
+  const down = isLoan ? financing.down || 0 : 0;
+  // Loans finance the GROSS cost; the credit shows up later at tax time.
+  const principal = isLoan ? Math.max(0, grossCost - down) : 0;
+  const itcPaydown = isLoan && financing.itcPaydown ? itc.totalRealized : 0;
+  const schedule = isLoan
+    ? loanSchedule({ principal, apr: financing.apr, termYears: financing.termYears, itcPaydown })
+    : null;
+
+  const upfront = isLoan ? down : grossCost;
 
   let escalator = 1;
   let usageMult = 1;
   let cumulative = -upfront;
   let npv = -upfront;
-  const rows = [{ year: 0, net: -upfront, cumulative }];
+  const rows = [{ year: 0, net: -upfront, cumulative, savings: 0, itc: 0, lifecycle: 0, debt: 0 }];
+
+  let year1 = null;
 
   for (let y = 1; y <= a.analysisYears; y++) {
     escalator *= 1 + scenario.cost;
     usageMult *= 1 + scenario.consumption;
 
-    const prod = year1Production * Math.pow(1 - a.panelDegradation, y - 1);
-    const demand = baseUsage * usageMult;
-    const selfUse = Math.min(prod, demand);
-    const exported = prod - selfUse;
-    const solarSavings = (selfUse + exported * nmCreditRate) * avgRetailRate * escalator;
-    const batterySavings = batteryAnnual * escalator;
-    const loanPayments = isLoan && y <= financing.termYears ? pmt * 12 : 0;
+    const prodY = scaleShape(productionShape, Math.pow(1 - a.panelDegradation, y - 1));
+    const loadY = scaleShape(loadShape, usageMult);
+    const shift = hasBattery ? dispatch({ productionShape: prodY, loadShape: loadY, rate, creditRate, a }) : null;
+    const netted = solarSavings({ productionShape: prodY, loadShape: loadY, rate, creditRate, batteryShift: shift });
 
-    const net = solarSavings + batterySavings - loanPayments;
+    const savings = netted.savings * escalator;
+    const { cost: lifecycle } = lifecycleCost(y, { systemKW, hasBattery, a });
+    const debt = isLoan ? annualDebtService(schedule, y) : 0;
+    const credit = itc.realized[y - 1] || 0;
+
+    const net = savings + credit - lifecycle - debt;
     cumulative += net;
     npv += net / Math.pow(1 + a.discountRate, y);
-    rows.push({ year: y, production: prod, solarSavings, batterySavings, loanPayments, net, cumulative });
+
+    if (y === 1) year1 = netted;
+
+    rows.push({
+      year: y,
+      savings,
+      itc: credit,
+      lifecycle,
+      debt,
+      net,
+      cumulative,
+      production: netted.exported + netted.selfConsumed,
+      selfConsumptionRate: netted.selfConsumptionRate,
+    });
   }
 
   const paybackYear = rows.find((r) => r.year > 0 && r.cumulative >= 0)?.year ?? null;
+  const totalDebt = rows.reduce((s, r) => s + r.debt, 0);
+
   return {
     rows,
     npv,
-    netCapex,
+    itc,
+    schedule,
     upfront,
-    monthlyPayment: pmt,
+    netCapex: grossCost - itc.totalRealized,
     paybackYear,
     netGain: cumulative,
-    totalInvested: isLoan ? upfront + pmt * 12 * financing.termYears : netCapex,
+    totalInvested: upfront + totalDebt,
+    year1,
+    monthlyPayment: schedule ? schedule.initialPayment : 0,
+    laterMonthlyPayment: schedule ? schedule.laterPayment : 0,
   };
 }
 
-// Signed annualized return — losses report as losses (v1 used Math.abs).
+// Signed annualized return — losses report as losses.
 export function annualizedReturn(invested, netGain, years = 25) {
   if (invested <= 0) return 0;
-  const ratio = (invested + netGain) / invested; // netGain can be negative
+  const ratio = (invested + netGain) / invested;
   if (ratio <= 0) return -100;
   return (Math.pow(ratio, 1 / years) - 1) * 100;
 }

@@ -4,7 +4,7 @@ import { annualizedReturn } from './projections.js';
 // report can show the math instead of a black-box verdict (fixes v1's opaque card).
 const WEIGHTS = { payback: 0.35, npv: 0.35, return: 0.20, robustness: 0.10 };
 
-function scoreOption(name, sens, invested) {
+function scoreOption(name, sens, invested, years = 25) {
   const base = sens.base;
   const factors = [
     {
@@ -17,7 +17,7 @@ function scoreOption(name, sens, invested) {
     },
     {
       key: 'npv',
-      label: `NPV over 25 years`,
+      label: `NPV over ${years} years`,
       raw: base.npv,
       // NPV equal to the investment → 1.0, zero or negative → 0
       score: Math.max(0, Math.min(1, base.npv / Math.max(invested, 1))),
@@ -26,9 +26,9 @@ function scoreOption(name, sens, invested) {
     {
       key: 'return',
       label: 'Annualized return',
-      raw: annualizedReturn(invested, base.netGain),
+      raw: annualizedReturn(invested, base.netGain, years),
       // 8%/yr → 1.0
-      score: Math.max(0, Math.min(1, annualizedReturn(invested, base.netGain) / 8)),
+      score: Math.max(0, Math.min(1, annualizedReturn(invested, base.netGain, years) / 8)),
       weight: WEIGHTS.return,
     },
     {
@@ -45,7 +45,7 @@ function scoreOption(name, sens, invested) {
 
 export function recommend(options) {
   // options: [{name, sens, invested, note?}]
-  const scored = options.map((o) => ({ ...scoreOption(o.name, o.sens, o.invested), note: o.note }));
+  const scored = options.map((o) => ({ ...scoreOption(o.name, o.sens, o.invested, o.years), note: o.note }));
   scored.sort((x, y) => y.total - x.total);
   const best = scored[0];
   const viable = best.total >= 0.35;

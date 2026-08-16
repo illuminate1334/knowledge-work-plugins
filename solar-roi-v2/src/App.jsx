@@ -1,50 +1,119 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DEFAULTS } from './engine/assumptions.js';
-import Welcome from './components/steps/Welcome.jsx';
-import BillUpload from './components/steps/BillUpload.jsx';
-import RateIntelligence from './components/steps/RateIntelligence.jsx';
-import PropertyDetails from './components/steps/PropertyDetails.jsx';
-import Analysis from './components/steps/Analysis.jsx';
-import Report from './components/steps/Report.jsx';
-
-const STEPS = ['Welcome', 'Bills', 'Rates', 'Property & Financing', 'Analysis', 'Report'];
+import { buildModel } from './engine/model.js';
+import { monthlyUsageFromAverageBill } from './engine/billEstimate.js';
+import { reconcile } from './engine/reconciliation.js';
+import ModeSelector from './components/ModeSelector.jsx';
+import BillsPanel from './components/panels/BillsPanel.jsx';
+import RatePanel from './components/panels/RatePanel.jsx';
+import PropertyPanel from './components/panels/PropertyPanel.jsx';
+import QuotePanel from './components/panels/QuotePanel.jsx';
+import ProposalPanel from './components/panels/ProposalPanel.jsx';
+import Results from './components/results/Results.jsx';
+import PrintSheet from './components/results/PrintSheet.jsx';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function App() {
-  const [step, setStep] = useState(0);
+  const [mode, setMode] = useState('explore'); // explore | audit | advise
+  const [billMode, setBillMode] = useState('quick'); // quick | detailed
+  const [avgBill, setAvgBill] = useState(160);
   const [bills, setBills] = useState(MONTHS.map((month) => ({ month, usage: '', cost: '' })));
-  const [rateInfo, setRateInfo] = useState(null); // {utility, rate, netMetering, asOfDate, sources}
+  const [rateInfo, setRateInfo] = useState(null);
   const [property, setProperty] = useState({ roofSqFt: 1200, orientation: 'south', shade: 'minimal' });
-  const [financing, setFinancing] = useState({ type: 'cash', apr: 7.5, termYears: 15, down: 0, applyITC: true });
+  const [financing, setFinancing] = useState({
+    type: 'cash', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: true,
+  });
   const [assumptions, setAssumptions] = useState({ ...DEFAULTS });
-  const [analysis, setAnalysis] = useState(null); // computed in Analysis step, consumed by Report
+  const [quote, setQuote] = useState({
+    systemKW: 8, totalPrice: 32000, annualProductionKWh: 12000,
+    firstYearSavings: 1800, lifetimeSavings: 65000, monthlyPayment: 0, includesLifecycleCosts: false,
+  });
+  const [proposal, setProposal] = useState({ preparedFor: '', preparedBy: '', company: '' });
 
-  const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
-  const back = () => setStep((s) => Math.max(s - 1, 0));
+  const detailedUsage = bills.map((b) => parseFloat(b.usage) || 0);
+  const hasDetailed = detailedUsage.every((u) => u > 0);
 
-  const stepProps = {
-    bills, setBills,
-    rateInfo, setRateInfo,
-    property, setProperty,
-    financing, setFinancing,
-    assumptions, setAssumptions,
-    analysis, setAnalysis,
-    next, back,
-  };
+  const monthlyUsage = useMemo(() => {
+    if (billMode === 'detailed' && hasDetailed) return detailedUsage;
+    if (rateInfo?.rate) return monthlyUsageFromAverageBill(avgBill, rateInfo.rate);
+    return [];
+  }, [billMode, hasDetailed, JSON.stringify(detailedUsage), avgBill, rateInfo]);
 
-  const Current = [Welcome, BillUpload, RateIntelligence, PropertyDetails, Analysis, Report][step];
+  const ready = rateInfo?.rate && monthlyUsage.length === 12 && monthlyUsage.some((u) => u > 0);
+
+  const model = useMemo(() => {
+    if (!ready) return null;
+    try {
+      return buildModel({
+        monthlyUsage,
+        rate: rateInfo.rate,
+        netMetering: rateInfo.netMetering,
+        property,
+        financing,
+        assumptions,
+        quote: mode === 'audit' ? quote : null,
+      });
+    } catch (err) {
+      return { error: err.message };
+    }
+  }, [ready, JSON.stringify(monthlyUsage), rateInfo, property, financing, assumptions, mode, quote]);
+
+  // Only meaningful when the user typed real bill costs.
+  const gate = useMemo(() => {
+    if (!rateInfo?.rate || billMode !== 'detailed') return null;
+    const parsed = bills.map((b) => ({ usage: parseFloat(b.usage) || 0, cost: parseFloat(b.cost) || 0 }));
+    if (!parsed.every((b) => b.usage > 0 && b.cost > 0)) return null;
+    return reconcile(parsed, rateInfo.rate);
+  }, [bills, rateInfo, billMode]);
 
   return (
     <div className="app">
-      <div className="stepper">
-        {STEPS.map((name, i) => (
-          <span key={name} className={`pill ${i === step ? 'active' : i < step ? 'done' : ''}`}>
-            {i + 1}. {name}
-          </span>
-        ))}
+      <header className="topbar no-print">
+        <div>
+          <h1>Solar ROI Analyzer</h1>
+          <p className="sub">Independent modelling for a five-figure decision.</p>
+        </div>
+        <ModeSelector mode={mode} setMode={setMode} />
+      </header>
+
+      <div className="layout">
+        <aside className="inputs no-print">
+          <RatePanel rateInfo={rateInfo} setRateInfo={setRateInfo} bills={bills} billMode={billMode} gate={gate} />
+          <BillsPanel
+            billMode={billMode} setBillMode={setBillMode}
+            avgBill={avgBill} setAvgBill={setAvgBill}
+            bills={bills} setBills={setBills}
+            rate={rateInfo?.rate} monthlyUsage={monthlyUsage}
+          />
+          <PropertyPanel
+            property={property} setProperty={setProperty}
+            financing={financing} setFinancing={setFinancing}
+            assumptions={assumptions} setAssumptions={setAssumptions}
+          />
+          {mode === 'audit' && <QuotePanel quote={quote} setQuote={setQuote} />}
+          {mode === 'advise' && <ProposalPanel proposal={proposal} setProposal={setProposal} />}
+        </aside>
+
+        <main className="results">
+          {!ready && (
+            <div className="card">
+              <h2>Start with your rate plan</h2>
+              <p className="sub">
+                Confirm the tariff on the left — look it up from your address or enter it manually.
+                Results appear here and update as you change anything.
+              </p>
+            </div>
+          )}
+          {ready && model?.error && <div className="card warnbox">Model error: {model.error}</div>}
+          {ready && model && !model.error && (
+            <>
+              <Results model={model} mode={mode} assumptions={assumptions} rateInfo={rateInfo} financing={financing} gate={gate} />
+              <PrintSheet model={model} mode={mode} assumptions={assumptions} rateInfo={rateInfo} financing={financing} proposal={proposal} />
+            </>
+          )}
+        </main>
       </div>
-      <Current {...stepProps} />
     </div>
   );
 }

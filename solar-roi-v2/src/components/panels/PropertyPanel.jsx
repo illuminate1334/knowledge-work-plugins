@@ -1,29 +1,25 @@
 import React from 'react';
 import AssumptionsPanel from '../AssumptionsPanel.jsx';
 
-export default function PropertyDetails({ property, setProperty, financing, setFinancing, assumptions, setAssumptions, next, back }) {
+export default function PropertyPanel({ property, setProperty, financing, setFinancing, assumptions, setAssumptions }) {
   const setP = (patch) => setProperty({ ...property, ...patch });
   const setF = (patch) => setFinancing({ ...financing, ...patch });
+  const setA = (patch) => setAssumptions({ ...assumptions, ...patch });
 
   return (
-    <div className="card">
-      <h2>Property & financing</h2>
-      <p className="sub">These inputs drive system sizing and the cash-flow model.</p>
-
+    <section className="card">
+      <h2>3 · Property & financing</h2>
       <div className="row">
         <div className="field">
-          <label>Usable roof area (sq ft)</label>
+          <label>Usable roof (sq ft)</label>
           <input type="number" min="0" value={property.roofSqFt} onChange={(e) => setP({ roofSqFt: parseFloat(e.target.value) || 0 })} />
         </div>
         <div className="field">
-          <label>Primary roof orientation</label>
+          <label>Orientation</label>
           <select value={property.orientation} onChange={(e) => setP({ orientation: e.target.value })}>
-            <option value="south">South</option>
-            <option value="southeast">Southeast</option>
-            <option value="southwest">Southwest</option>
-            <option value="east">East</option>
-            <option value="west">West</option>
-            <option value="north">North</option>
+            {['south', 'southeast', 'southwest', 'east', 'west', 'north'].map((o) => (
+              <option key={o} value={o}>{o[0].toUpperCase() + o.slice(1)}</option>
+            ))}
           </select>
         </div>
         <div className="field">
@@ -36,10 +32,9 @@ export default function PropertyDetails({ property, setProperty, financing, setF
         </div>
       </div>
 
-      <h2 style={{ fontSize: 16, marginTop: 18 }}>Financing</h2>
       <div className="row">
         <div className="field">
-          <label>Payment method</label>
+          <label>Payment</label>
           <select value={financing.type} onChange={(e) => setF({ type: e.target.value })}>
             <option value="cash">Cash</option>
             <option value="loan">Loan</option>
@@ -52,27 +47,43 @@ export default function PropertyDetails({ property, setProperty, financing, setF
               <input type="number" step="0.1" value={financing.apr} onChange={(e) => setF({ apr: parseFloat(e.target.value) || 0 })} />
             </div>
             <div className="field">
-              <label>Term (years)</label>
+              <label>Term (yrs)</label>
               <input type="number" value={financing.termYears} onChange={(e) => setF({ termYears: parseInt(e.target.value) || 0 })} />
             </div>
             <div className="field">
-              <label>Down payment ($)</label>
+              <label>Down ($)</label>
               <input type="number" value={financing.down} onChange={(e) => setF({ down: parseFloat(e.target.value) || 0 })} />
             </div>
           </>
         )}
-        <label className="note" style={{ alignSelf: 'center' }}>
-          <input type="checkbox" checked={financing.applyITC} onChange={(e) => setF({ applyITC: e.target.checked })} />{' '}
-          Apply 30% federal tax credit
-        </label>
       </div>
+
+      <div className="row">
+        <div className="field">
+          <label>Annual federal tax liability ($)</label>
+          <input
+            type="number"
+            value={assumptions.annualTaxLiability}
+            onChange={(e) => setA({ annualTaxLiability: parseFloat(e.target.value) || 0 })}
+          />
+        </div>
+        <label className="note" style={{ alignSelf: 'flex-end' }}>
+          <input type="checkbox" checked={financing.applyITC} onChange={(e) => setF({ applyITC: e.target.checked })} />{' '}
+          Claim the 30% credit
+        </label>
+        {financing.type === 'loan' && (
+          <label className="note" style={{ alignSelf: 'flex-end' }}>
+            <input type="checkbox" checked={financing.itcPaydown} onChange={(e) => setF({ itcPaydown: e.target.checked })} />{' '}
+            Apply credit to principal
+          </label>
+        )}
+      </div>
+      <p className="note">
+        The tax credit is non-refundable — it can only offset tax you actually owe. A low liability here
+        materially changes the outcome.
+      </p>
 
       <AssumptionsPanel assumptions={assumptions} setAssumptions={setAssumptions} />
-
-      <div className="nav">
-        <button onClick={back}>Back</button>
-        <button className="primary" disabled={!(property.roofSqFt > 0)} onClick={next}>Run analysis</button>
-      </div>
-    </div>
+    </section>
   );
 }

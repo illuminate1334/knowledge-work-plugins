@@ -19,6 +19,36 @@ export function periodForHour(hour, periods) {
   return 'offPeak';
 }
 
+// $/kWh for a specific hour. Tiered plans have no hourly variation — their
+// marginal price depends on cumulative monthly usage, so callers must use
+// marginalRate() for those instead of pricing hour by hour.
+export function rateForHour(hour, rate) {
+  if (rate.type === 'tou') return rate.periods[periodForHour(hour, rate.periods)].rate;
+  if (rate.type === 'flat') return rate.rate;
+  return null; // tiered: not an hourly quantity
+}
+
+// The price of the NEXT kWh at a given monthly usage level. This is what solar
+// actually displaces on a tiered plan — v2 used the average rate, which
+// understated savings because solar peels off the top tier first.
+export function marginalRate(usage, rate) {
+  if (rate.type === 'flat') return rate.rate;
+  if (rate.type === 'tou') {
+    const profileSum = HOURLY_PROFILE.reduce((a, b) => a + b, 0);
+    return HOURLY_PROFILE.reduce(
+      (sum, f, hour) => sum + (f / profileSum) * rate.periods[periodForHour(hour, rate.periods)].rate,
+      0,
+    );
+  }
+  let prevCap = 0;
+  for (const tier of rate.tiers) {
+    const cap = tier.limit ?? Infinity;
+    if (usage <= cap) return tier.rate;
+    prevCap = cap;
+  }
+  return rate.tiers[rate.tiers.length - 1].rate;
+}
+
 export function monthlyCost(usage, rate, includeFixed = true) {
   let cost = 0;
   if (rate.type === 'flat') {
@@ -38,6 +68,22 @@ export function monthlyCost(usage, rate, includeFixed = true) {
       const hourlyShare = (usage * f) / profileSum;
       cost += hourlyShare * rate.periods[periodForHour(hour, rate.periods)].rate;
     });
+  }
+  return cost + (includeFixed ? rate.fixedCharge || 0 : 0);
+}
+
+// Cost of a month's consumption given an explicit hourly import profile.
+// TOU is priced hour by hour; flat/tiered price the monthly total.
+export function monthlyCostFromHourly(hourlyImports, days, rate, includeFixed = true) {
+  const monthTotal = hourlyImports.reduce((a, b) => a + b, 0) * days;
+  let cost;
+  if (rate.type === 'tou') {
+    cost = hourlyImports.reduce(
+      (sum, kWh, hour) => sum + kWh * days * rate.periods[periodForHour(hour, rate.periods)].rate,
+      0,
+    );
+  } else {
+    cost = monthlyCost(monthTotal, rate, false);
   }
   return cost + (includeFixed ? rate.fixedCharge || 0 : 0);
 }
