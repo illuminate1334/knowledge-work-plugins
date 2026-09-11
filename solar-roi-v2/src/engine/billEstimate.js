@@ -35,3 +35,16 @@ export function monthlyUsageFromAverageBill(avgBill, rate) {
   const monthlyUsage = usageFromBill(avgBill, rate);
   return estimateMonthlyUsage(monthlyUsage * 12);
 }
+
+// Detailed mode must not silently mix in the average-bill estimate while the
+// user is still filling the 12-month table.
+export function resolveMonthlyUsage({ billMode, detailedUsage, avgBill, rate } = {}) {
+  if (billMode === 'detailed') {
+    const complete = Array.isArray(detailedUsage)
+      && detailedUsage.length === 12
+      && detailedUsage.every((u) => Number(u) > 0);
+    return complete ? detailedUsage.map(Number) : [];
+  }
+  if (rate) return monthlyUsageFromAverageBill(avgBill, rate);
+  return [];
+}

@@ -1,5 +1,25 @@
 import { ORIENTATION, SHADE } from './assumptions.js';
 
+// A weather snapshot's annual yield is only orientation-correct for the
+// geometry it was fetched at. If the array later moves, scale by the
+// orientation table (tilt mismatches cannot be re-derated this way).
+export function measuredYieldForGeometry(weather, { orientation, tiltDegrees } = {}) {
+  const y = weather?.annualKWhPerKW;
+  if (!Number.isFinite(y) || y <= 0) return null;
+  if (!weather.accountsForOrientation) return y;
+
+  if (weather.tiltDegrees != null && tiltDegrees != null && weather.tiltDegrees !== tiltDegrees) {
+    return null;
+  }
+  if (weather.orientation != null && orientation != null && weather.orientation !== orientation) {
+    const from = ORIENTATION[weather.orientation];
+    const to = ORIENTATION[orientation];
+    if (!(from > 0) || !Number.isFinite(to)) return null;
+    return y * (to / from);
+  }
+  return y;
+}
+
 // Property inputs drive output. Sizing targets 100% of annual usage, capped by
 // what the roof can physically hold.
 //

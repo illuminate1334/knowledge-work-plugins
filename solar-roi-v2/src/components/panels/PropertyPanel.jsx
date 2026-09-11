@@ -48,7 +48,15 @@ export default function PropertyPanel({ property, setProperty, financing, setFin
             </div>
             <div className="field">
               <label>Term (yrs)</label>
-              <input type="number" value={financing.termYears} onChange={(e) => setF({ termYears: parseInt(e.target.value) || 0 })} />
+              <input
+                type="number"
+                min="1"
+                value={financing.termYears}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  setF({ termYears: Number.isFinite(n) && n > 0 ? n : 1 });
+                }}
+              />
             </div>
             <div className="field">
               <label>Down ($)</label>

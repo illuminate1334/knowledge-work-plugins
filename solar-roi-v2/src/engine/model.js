@@ -1,5 +1,5 @@
 import { DAYS_IN_MONTH } from './assumptions.js';
-import { sizeSystem, grossSystemCost } from './production.js';
+import { sizeSystem, grossSystemCost, measuredYieldForGeometry } from './production.js';
 import { buildProductionShape } from './solarShape.js';
 import { buildLoadShape } from './loadShape.js';
 import { solarSavings } from './netting.js';
@@ -35,7 +35,10 @@ export function buildModel({
     orientation: property.orientation,
     shade: property.shade,
     a,
-    measuredYieldPerKW: weather?.annualKWhPerKW ?? null,
+    measuredYieldPerKW: measuredYieldForGeometry(weather, {
+      orientation: property.orientation,
+      tiltDegrees: a.tiltDegrees,
+    }),
   });
   const systemKW = quote?.systemKW > 0 ? quote.systemKW : sized.systemKW;
   const year1Production = quote?.systemKW > 0

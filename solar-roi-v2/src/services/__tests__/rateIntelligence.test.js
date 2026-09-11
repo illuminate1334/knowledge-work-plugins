@@ -54,4 +54,18 @@ describe('normalizeCandidate', () => {
     expect(c.rate.tiers[1].limit).toBe(Infinity);
     expect(c.confidence).toBe('low');
   });
+
+  it('extracts coordinates so an address lookup can seed the weather panel', () => {
+    const c = normalizeCandidate({
+      utility: 'X',
+      rates: { standard: { type: 'flat', name: 'R', rate: 0.13, fixedCharge: 10 } },
+      coordinates: { lat: 38.95, lon: -92.33 },
+    });
+    expect(c.coordinates).toEqual({ lat: 38.95, lon: -92.33 });
+    const missing = normalizeCandidate({
+      utility: 'X',
+      rates: { standard: { type: 'flat', name: 'R', rate: 0.13 } },
+    });
+    expect(missing.coordinates).toBeNull();
+  });
 });

@@ -16,7 +16,7 @@
 // what it is, because a number that changes an NPV by five figures should never
 // appear in this app without the user being able to see its source.
 
-const PVWATTS_URL = 'https://developer.nrel.gov/api/pvwatts/v8.json';
+export const PVWATTS_URL = 'https://developer.nlr.gov/api/pvwatts/v8.json';
 
 // PVWatts azimuth is degrees clockwise from NORTH (180 = due south).
 // Our internal convention is degrees from SOUTH, positive toward west.
@@ -79,7 +79,13 @@ export async function fetchPVWatts({
     return { error: 'Unreadable response from NREL — enter monthly production manually.' };
   }
 
-  return normalizePVWatts(data, systemCapacityKW);
+  const normalized = normalizePVWatts(data, systemCapacityKW);
+  if (normalized.error) return normalized;
+  return {
+    ...normalized,
+    tiltDegrees,
+    azimuthFromSouth,
+  };
 }
 
 // Exported for tests: turn a PVWatts payload into our internal shape.
