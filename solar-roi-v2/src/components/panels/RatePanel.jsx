@@ -22,14 +22,22 @@ export default function RatePanel({ rateInfo, setRateInfo, bills, billMode, gate
 
   const pick = (c, i) => {
     setSelected(i);
-    setRateInfo({ utility: c.utility, rate: c.rate, netMetering: c.netMetering, asOfDate: c.asOfDate, sources: c.sources });
+    setRateInfo({
+      utility: c.utility,
+      rate: c.rate,
+      netMetering: c.netMetering,
+      asOfDate: c.asOfDate,
+      sources: c.sources,
+      coordinates: c.coordinates ?? null,
+    });
   };
 
   const manual = () => {
     setSelected(null);
     setRateInfo({
       utility: 'Manual entry', rate: { ...BLANK_RATE },
-      netMetering: { available: true, creditRate: 1.0, description: '' }, asOfDate: null, sources: [],
+      netMetering: { available: true, creditRate: 1.0, description: '' },
+      asOfDate: null, sources: [], coordinates: null,
     });
   };
 

@@ -9,6 +9,8 @@ import { SCENARIOS } from './assumptions.js';
 // 25-year cash flow built from first principles:
 //   savings   = (bill without solar) − (bill with solar), netted hour by hour
 //   ITC       = arrives when tax liability can absorb it, not as a capex discount
+//               — except when it is applied to loan principal, in which case it is
+//               counted only as a reduction in debt, not again as a cash inflow
 //   lifecycle = inverter, O&M, battery, roof rework — real money, real years
 //   debt      = re-amortizing solar-loan schedule, including the ITC paydown trap
 export function project({
@@ -30,9 +32,16 @@ export function project({
   const down = isLoan ? financing.down || 0 : 0;
   // Loans finance the GROSS cost; the credit shows up later at tax time.
   const principal = isLoan ? Math.max(0, grossCost - down) : 0;
-  const itcPaydown = isLoan && financing.itcPaydown ? itc.totalRealized : 0;
+  const itcExpected = isLoan ? itc.totalRealized : 0;
+  const applyPaydown = isLoan && financing.itcPaydown && itcExpected > 0;
   const schedule = isLoan
-    ? loanSchedule({ principal, apr: financing.apr, termYears: financing.termYears, itcPaydown })
+    ? loanSchedule({
+      principal,
+      apr: financing.apr,
+      termYears: financing.termYears,
+      itcExpected,
+      applyPaydown,
+    })
     : null;
 
   const upfront = isLoan ? down : grossCost;
@@ -46,9 +55,6 @@ export function project({
   let year1 = null;
 
   for (let y = 1; y <= a.analysisYears; y++) {
-    escalator *= 1 + scenario.cost;
-    usageMult *= 1 + scenario.consumption;
-
     const prodY = scaleShape(productionShape, Math.pow(1 - a.panelDegradation, y - 1));
     const loadY = scaleShape(loadShape, usageMult);
     const shift = hasBattery ? dispatch({ productionShape: prodY, loadShape: loadY, rate, creditRate, a }) : null;
@@ -57,7 +63,10 @@ export function project({
     const savings = netted.savings * escalator;
     const { cost: lifecycle } = lifecycleCost(y, { systemKW, hasBattery, a });
     const debt = isLoan ? annualDebtService(schedule, y) : 0;
-    const credit = itc.realized[y - 1] || 0;
+    const realized = itc.realized[y - 1] || 0;
+    // When the credit is applied to principal, its value is the lower debt
+    // service — adding it here again would count the same dollars twice.
+    const credit = applyPaydown ? 0 : realized;
 
     const net = savings + credit - lifecycle - debt;
     cumulative += net;
@@ -76,6 +85,9 @@ export function project({
       production: netted.exported + netted.selfConsumed,
       selfConsumptionRate: netted.selfConsumptionRate,
     });
+
+    escalator *= 1 + scenario.cost;
+    usageMult *= 1 + scenario.consumption;
   }
 
   const paybackYear = rows.find((r) => r.year > 0 && r.cumulative >= 0)?.year ?? null;
@@ -92,8 +104,8 @@ export function project({
     netGain: cumulative,
     totalInvested: upfront + totalDebt,
     year1,
-    monthlyPayment: schedule ? schedule.initialPayment : 0,
-    laterMonthlyPayment: schedule ? schedule.laterPayment : 0,
+    monthlyPayment: schedule ? schedule.quotedPayment : 0,
+    laterMonthlyPayment: schedule ? schedule.trapPayment : 0,
   };
 }
 

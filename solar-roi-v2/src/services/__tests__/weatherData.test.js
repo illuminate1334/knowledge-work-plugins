@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePVWatts, parseMonthlySeries, toPVWattsAzimuth } from '../weatherData.js';
+import { normalizePVWatts, parseMonthlySeries, toPVWattsAzimuth, PVWATTS_URL } from '../weatherData.js';
 
 // Shaped like a real PVWatts v8 payload for a 4 kW system.
 const PAYLOAD = {
@@ -20,6 +20,13 @@ describe('PVWatts azimuth conversion', () => {
     expect(toPVWattsAzimuth(90)).toBe(270);  // west
     expect(toPVWattsAzimuth(-90)).toBe(90);  // east
     expect(toPVWattsAzimuth(180)).toBe(0);   // north wraps
+  });
+});
+
+describe('PVWatts endpoint', () => {
+  it('calls the current NLR developer host, not the retired nrel.gov API domain', () => {
+    expect(PVWATTS_URL).toBe('https://developer.nlr.gov/api/pvwatts/v8.json');
+    expect(PVWATTS_URL).not.toMatch(/nrel\.gov/);
   });
 });
 

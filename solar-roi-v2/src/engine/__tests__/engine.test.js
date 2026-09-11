@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULTS, DAYS_IN_MONTH, SCENARIOS } from '../assumptions.js';
 import { monthlyCost, periodForHour, marginalRate, avgRetailRate } from '../utilityCosts.js';
-import { sizeSystem } from '../production.js';
+import { sizeSystem, measuredYieldForGeometry } from '../production.js';
 import { buildProductionShape } from '../solarShape.js';
 import { buildLoadShape } from '../loadShape.js';
 import { solarSavings } from '../netting.js';
@@ -13,6 +13,7 @@ import { project, annualizedReturn } from '../projections.js';
 import { impliedEscalator } from '../quoteAudit.js';
 import { reconcile } from '../reconciliation.js';
 import { buildModel } from '../model.js';
+import { resolveMonthlyUsage } from '../billEstimate.js';
 
 const a = { ...DEFAULTS };
 const FLAT = { type: 'flat', rate: 0.13, fixedCharge: 12 };
@@ -140,6 +141,44 @@ describe('weather-driven production', () => {
     expect(assumed.effectiveYield).toBeCloseTo(a.baseYieldKWhPerKW * 0.85 * 0.95, 6);
     expect(measured.effectiveYield).toBeCloseTo(a.baseYieldKWhPerKW * 0.95, 6);
     expect(measured.usingMeasuredYield).toBe(true);
+  });
+
+  it('re-derates measured yield when the array orientation no longer matches the snapshot', () => {
+    const weather = {
+      annualKWhPerKW: 1500,
+      accountsForOrientation: true,
+      orientation: 'south',
+      tiltDegrees: 25,
+    };
+    const south = measuredYieldForGeometry(weather, { orientation: 'south', tiltDegrees: 25 });
+    const west = measuredYieldForGeometry(weather, { orientation: 'west', tiltDegrees: 25 });
+    expect(south).toBeCloseTo(1500);
+    expect(west).toBeCloseTo(1500 * 0.85);
+    expect(measuredYieldForGeometry(weather, { orientation: 'south', tiltDegrees: 30 })).toBeNull();
+  });
+
+  it('does not keep a south-facing PVWatts yield after the array is turned west', () => {
+    const weather = {
+      annualKWhPerKW: 1500,
+      monthly: ODD,
+      source: 'test',
+      accountsForOrientation: true,
+      orientation: 'south',
+      tiltDegrees: 25,
+    };
+    const inputs = {
+      monthlyUsage: MONTHLY,
+      rate: FLAT,
+      netMetering: { available: true, creditRate: 1 },
+      financing: { type: 'cash', applyITC: true },
+      assumptions: a,
+    };
+    const south = buildModel({ ...inputs, property: { roofSqFt: 2000, orientation: 'south', shade: 'minimal' }, weather });
+    const west = buildModel({ ...inputs, property: { roofSqFt: 2000, orientation: 'west', shade: 'minimal' }, weather });
+    expect(west.sized.usingMeasuredYield).toBe(true);
+    expect(west.sized.effectiveYield).toBeLessThan(south.sized.effectiveYield);
+    expect(west.sized.effectiveYield).toBeCloseTo(south.sized.effectiveYield * 0.85, 4);
+    expect(west.sized.systemKW).toBeGreaterThan(south.sized.systemKW);
   });
 
   it('flows weather through buildModel and changes the outcome', () => {
@@ -276,11 +315,27 @@ describe('financing', () => {
     expect(loanPayment(12000, 0, 10)).toBeCloseTo(100);
   });
 
-  it('re-amortizes upward when the ITC paydown never arrives', () => {
-    const withPaydown = loanSchedule({ principal: 30000, apr: 7.5, termYears: 20, itcPaydown: 9000 });
-    const without = loanSchedule({ principal: 30000, apr: 7.5, termYears: 20, itcPaydown: 0 });
-    expect(withPaydown.laterPayment).toBeLessThan(withPaydown.initialPayment);
-    expect(without.laterPayment).toBeCloseTo(without.initialPayment);
+  it('does not skip debt when the term is zero or invalid', () => {
+    expect(loanPayment(12000, 0, 0)).toBeCloseTo(1000); // clamped to 1 year
+    expect(loanPayment(12000, 0, -5)).toBeCloseTo(1000);
+    const s = loanSchedule({ principal: 20000, apr: 6, termYears: 0, itcPaydown: 0 });
+    expect(s.months).toBe(12);
+    expect(annualDebtService(s, 1)).toBeGreaterThan(0);
+    expect(annualDebtService(s, 1)).toBeCloseTo(s.initialPayment * 12);
+  });
+
+  it('quotes the teaser and recasts upward if the ITC paydown never arrives', () => {
+    const withPaydown = loanSchedule({
+      principal: 30000, apr: 7.5, termYears: 20, itcExpected: 9000, applyPaydown: true,
+    });
+    const without = loanSchedule({
+      principal: 30000, apr: 7.5, termYears: 20, itcExpected: 9000, applyPaydown: false,
+    });
+    expect(withPaydown.quotedPayment).toBeLessThan(loanPayment(30000, 7.5, 20));
+    expect(withPaydown.trapPayment).toBeGreaterThan(withPaydown.quotedPayment * 1.05);
+    expect(without.laterPayment).toBeGreaterThan(without.initialPayment * 1.05);
+    expect(without.laterPayment).toBeCloseTo(without.trapPayment);
+    expect(withPaydown.laterPayment).toBeLessThan(without.laterPayment);
   });
 
   it('stops charging debt service after the term', () => {
@@ -321,6 +376,66 @@ describe('projections', () => {
     const growth = r.rows[3].savings / r.rows[2].savings;
     expect(growth).toBeGreaterThan(1.02);
     expect(growth).toBeLessThan(1.031);
+  });
+
+  it('treats year 1 as the unelevated baseline (factor 1.0)', () => {
+    const r = project(base);
+    expect(r.rows[1].savings).toBeCloseTo(r.year1.savings, 4);
+    const y2overY1 = r.rows[2].savings / r.rows[1].savings;
+    expect(y2overY1).toBeGreaterThan(1.02);
+    expect(y2overY1).toBeLessThan(1.04);
+  });
+
+  it('does not count the ITC as cash when it is applied to loan principal', () => {
+    const loan = { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: true };
+    const r = project({ ...base, grossCost: 30000, financing: loan });
+    const itcCash = r.rows.reduce((s, row) => s + row.itc, 0);
+    expect(r.itc.totalRealized).toBeGreaterThan(0);
+    expect(itcCash).toBe(0);
+  });
+
+  it('counts the ITC as a cash inflow when it is not applied to principal', () => {
+    const r = project({
+      ...base,
+      grossCost: 30000,
+      financing: { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: false },
+    });
+    expect(r.rows.reduce((s, row) => s + row.itc, 0)).toBeCloseTo(r.itc.totalRealized);
+  });
+
+  it('does not inflate loan+paydown NPV by both the credit and the reduced debt', () => {
+    const common = { ...base, grossCost: 30000 };
+    const paydown = project({
+      ...common,
+      financing: { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: true },
+    });
+    const keep = project({
+      ...common,
+      financing: { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: false },
+    });
+    // Double-counting would make paydown better by roughly the PV of the
+    // credit (~$9k). After the fix the gap is the interest-rate differential.
+    expect(paydown.npv - keep.npv).toBeLessThan(paydown.itc.totalRealized * 0.4);
+  });
+
+  it('still subtracts debt when termYears is 0', () => {
+    const r = project({
+      ...base,
+      financing: { type: 'loan', apr: 6, termYears: 0, down: 0, applyITC: false, itcPaydown: false },
+    });
+    const totalDebt = r.rows.reduce((s, row) => s + row.debt, 0);
+    expect(totalDebt).toBeGreaterThan(0);
+    expect(r.rows[1].debt).toBeGreaterThan(0);
+  });
+
+  it('surfaces a payment jump if the tax credit is not applied to principal', () => {
+    const r = project({
+      ...base,
+      grossCost: 30000,
+      financing: { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: true },
+    });
+    expect(r.monthlyPayment).toBeGreaterThan(0);
+    expect(r.laterMonthlyPayment).toBeGreaterThan(r.monthlyPayment * 1.05);
   });
 
   it('a zero-tax-liability household gets a materially worse outcome', () => {
@@ -395,6 +510,19 @@ describe('buildModel end to end', () => {
     expect(m.audit.findings.some((f) => /fit the usable roof/i.test(f.title))).toBe(true);
   });
 
+  it('flags the re-amortization trap when the payment would jump without ITC paydown', () => {
+    const m = buildModel({
+      ...inputs,
+      financing: { type: 'loan', apr: 7.5, termYears: 20, down: 0, applyITC: true, itcPaydown: true },
+      quote: {
+        systemKW: 8, totalPrice: 32000, annualProductionKWh: 0, firstYearSavings: 0,
+        lifetimeSavings: 0, monthlyPayment: 0, includesLifecycleCosts: true,
+      },
+    });
+    expect(m.solarOnly.base.laterMonthlyPayment).toBeGreaterThan(m.solarOnly.base.monthlyPayment * 1.05);
+    expect(m.audit.findings.some((f) => /credit is not applied to principal/i.test(f.title))).toBe(true);
+  });
+
   it('audits a quote and flags an inflated production claim', () => {
     const m = buildModel({
       ...inputs,
@@ -402,5 +530,20 @@ describe('buildModel end to end', () => {
     });
     expect(m.audit.findings.some((f) => /production/i.test(f.title))).toBe(true);
     expect(m.audit.verdict).toMatch(/do not hold up/i);
+  });
+});
+
+describe('resolveMonthlyUsage', () => {
+  it('does not mix the average-bill estimate into an incomplete detailed table', () => {
+    const partial = [1000, 1000, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(resolveMonthlyUsage({ billMode: 'detailed', detailedUsage: partial, avgBill: 160, rate: FLAT })).toEqual([]);
+    const full = new Array(12).fill(900);
+    expect(resolveMonthlyUsage({ billMode: 'detailed', detailedUsage: full, avgBill: 160, rate: FLAT })).toEqual(full);
+  });
+
+  it('uses the average-bill path only in quick mode', () => {
+    const usage = resolveMonthlyUsage({ billMode: 'quick', detailedUsage: [], avgBill: 160, rate: FLAT });
+    expect(usage).toHaveLength(12);
+    expect(usage.some((u) => u > 0)).toBe(true);
   });
 });

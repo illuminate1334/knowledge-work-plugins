@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DEFAULTS } from './engine/assumptions.js';
 import { buildModel } from './engine/model.js';
-import { monthlyUsageFromAverageBill } from './engine/billEstimate.js';
+import { resolveMonthlyUsage } from './engine/billEstimate.js';
 import { reconcile } from './engine/reconciliation.js';
 import ModeSelector from './components/ModeSelector.jsx';
 import BillsPanel from './components/panels/BillsPanel.jsx';
@@ -36,11 +36,10 @@ export default function App() {
   const detailedUsage = bills.map((b) => parseFloat(b.usage) || 0);
   const hasDetailed = detailedUsage.every((u) => u > 0);
 
-  const monthlyUsage = useMemo(() => {
-    if (billMode === 'detailed' && hasDetailed) return detailedUsage;
-    if (rateInfo?.rate) return monthlyUsageFromAverageBill(avgBill, rateInfo.rate);
-    return [];
-  }, [billMode, hasDetailed, JSON.stringify(detailedUsage), avgBill, rateInfo]);
+  const monthlyUsage = useMemo(
+    () => resolveMonthlyUsage({ billMode, detailedUsage, avgBill, rate: rateInfo?.rate }),
+    [billMode, hasDetailed, JSON.stringify(detailedUsage), avgBill, rateInfo],
+  );
 
   const ready = rateInfo?.rate && monthlyUsage.length === 12 && monthlyUsage.some((u) => u > 0);
 
@@ -106,10 +105,15 @@ export default function App() {
         <main className="results">
           {!ready && (
             <div className="card">
-              <h2>Start with your rate plan</h2>
+              <h2>
+                {billMode === 'detailed' && rateInfo?.rate && !hasDetailed
+                  ? 'Finish the 12-month usage table'
+                  : 'Start with your rate plan'}
+              </h2>
               <p className="sub">
-                Confirm the tariff on the left — look it up from your address or enter it manually.
-                Results appear here and update as you change anything.
+                {billMode === 'detailed' && rateInfo?.rate && !hasDetailed
+                  ? 'Results wait until every month has usage — the average-bill estimate is not mixed in while you fill the table.'
+                  : 'Confirm the tariff on the left — look it up from your address or enter it manually. Results appear here and update as you change anything.'}
               </p>
             </div>
           )}

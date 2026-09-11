@@ -24,7 +24,7 @@ For the AI rate lookup and the weather lookup, create `.env.local`:
 
 ```
 VITE_ANTHROPIC_API_KEY=sk-ant-...
-VITE_NREL_API_KEY=...        # free at developer.nrel.gov/signup — optional
+VITE_NREL_API_KEY=...        # free at developer.nlr.gov/signup — optional
 ```
 
 Without a key the app works fine — rate entry falls back to manual. The lookup
@@ -140,8 +140,8 @@ bills *imply* your rate is, rather than just refusing. See
 - **The PVWatts network adapter has not been executed against the live
   endpoint.** It is written to the documented v8 contract and its response
   handling is unit-tested against a fixture, but the environment this was built
-  in blocks `developer.nrel.gov`. Verify it once before trusting it:
-  `curl "https://developer.nrel.gov/api/pvwatts/v8.json?api_key=DEMO_KEY&lat=38.95&lon=-92.33&system_capacity=4&azimuth=180&tilt=25&array_type=1&module_type=0&losses=14&timeframe=monthly"`.
+  in blocks `developer.nlr.gov`. Verify it once before trusting it:
+  `curl "https://developer.nlr.gov/api/pvwatts/v8.json?api_key=DEMO_KEY&lat=38.95&lon=-92.33&system_capacity=4&azimuth=180&tilt=25&array_type=1&module_type=0&losses=14&timeframe=monthly"`.
   If the parameter names have drifted, only `weatherData.js` needs changing.
   The paste path needs no network and is unaffected.
 - Weather is applied at **monthly** resolution. Real hourly TMY data would also

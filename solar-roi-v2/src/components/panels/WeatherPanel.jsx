@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { fetchPVWatts, parseMonthlySeries } from '../../services/weatherData.js';
 import { ORIENTATION_AZIMUTH } from '../../engine/assumptions.js';
 
@@ -10,7 +10,7 @@ export default function WeatherPanel({ weather, setWeather, property, assumption
 
   // Adopt coordinates resolved from the address lookup, until the user edits them.
   const [touched, setTouched] = useState(false);
-  React.useEffect(() => {
+  useEffect(() => {
     if (!touched && coordinates) {
       setLat(coordinates.lat);
       setLon(coordinates.lon);
@@ -20,6 +20,24 @@ export default function WeatherPanel({ weather, setWeather, property, assumption
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [paste, setPaste] = useState('');
+
+  const geometryStamp = () => ({
+    orientation: property.orientation,
+    tiltDegrees: assumptions.tiltDegrees,
+    azimuthFromSouth: ORIENTATION_AZIMUTH[property.orientation] ?? 0,
+  });
+
+  // PVWatts yield already includes the tilt/azimuth it was fetched at. If the
+  // array moves, that snapshot is no longer the right annual yield.
+  useEffect(() => {
+    if (!weather) return;
+    const oriChanged = weather.orientation != null && weather.orientation !== property.orientation;
+    const tiltChanged = weather.tiltDegrees != null && weather.tiltDegrees !== assumptions.tiltDegrees;
+    if (oriChanged || tiltChanged) {
+      setWeather(null);
+      setError('Array orientation or tilt changed — previous weather data no longer applies. Fetch PVWatts again.');
+    }
+  }, [property.orientation, assumptions.tiltDegrees, weather, setWeather]);
 
   const lookup = async () => {
     setBusy(true);
@@ -33,7 +51,7 @@ export default function WeatherPanel({ weather, setWeather, property, assumption
     });
     setBusy(false);
     if (r.error) { setError(r.error); return; }
-    setWeather(r);
+    setWeather({ ...r, ...geometryStamp() });
     setAssumptions({ ...assumptions, latitude: lat });
   };
 
@@ -41,7 +59,7 @@ export default function WeatherPanel({ weather, setWeather, property, assumption
     const r = parseMonthlySeries(paste, { systemCapacityKW: capacity });
     if (r.error) { setError(r.error); return; }
     setError(null);
-    setWeather(r);
+    setWeather({ ...r, ...geometryStamp() });
   };
 
   return (

@@ -73,13 +73,15 @@ export function auditQuote({ quote, model, rate, creditRate, a }) {
       `$${Math.round(model.itc.totalRealized).toLocaleString()} realized`);
   }
 
-  // 6. The re-amortization trap.
-  if (quote.monthlyPayment > 0 && model.laterMonthlyPayment > model.monthlyPayment * 1.05) {
+  // 6. The re-amortization trap — laterMonthlyPayment is the recast if the
+  // credit is NOT applied, monthlyPayment is the quoted teaser that assumes it is.
+  if (model.monthlyPayment > 0 && model.laterMonthlyPayment > model.monthlyPayment * 1.05) {
+    const quoted = quote.monthlyPayment > 0 ? quote.monthlyPayment : model.monthlyPayment;
     add(HIGH, 'Payment jumps if the credit is not applied to principal',
-      `The quoted $${Math.round(quote.monthlyPayment)}/mo assumes you pay the tax credit onto the loan. If you don't, the payment re-amortizes to about $${Math.round(model.laterMonthlyPayment)}/mo.`,
-      `$${Math.round(quote.monthlyPayment)}/mo`,
+      `The $${Math.round(quoted)}/mo payment assumes you pay the tax credit onto the loan. If you don't, the payment re-amortizes to about $${Math.round(model.laterMonthlyPayment)}/mo.`,
+      `$${Math.round(quoted)}/mo`,
       `$${Math.round(model.laterMonthlyPayment)}/mo`);
-    }
+  }
 
   // 7. Does the quoted array physically fit?
   if (quote.systemKW > 0 && model.roofMaxKW > 0 && quote.systemKW > model.roofMaxKW * 1.05) {
