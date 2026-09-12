@@ -32,7 +32,7 @@ type is "tou"; omit "superOffPeak" if the plan has none. The last tier's "limit"
 must be null. "creditRate" is the export credit as a fraction of the retail rate.
 Include up to 3 candidates if the address sits near a service-territory boundary.`;
 
-export async function lookupUtilityRates(address, apiKey = import.meta.env?.VITE_ANTHROPIC_API_KEY) {
+export async function lookupUtilityRates(address, apiKey = import.meta.env?.VITE_ANTHROPIC_API_KEY, options = {}) {
   if (!apiKey) {
     return { candidates: [], error: 'No API key configured — enter rates manually or set VITE_ANTHROPIC_API_KEY.' };
   }
@@ -41,6 +41,7 @@ export async function lookupUtilityRates(address, apiKey = import.meta.env?.VITE
   try {
     response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: options.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
@@ -54,7 +55,8 @@ export async function lookupUtilityRates(address, apiKey = import.meta.env?.VITE
         messages: [{ role: 'user', content: SCHEMA_PROMPT.replace('{ADDRESS}', address) }],
       }),
     });
-  } catch {
+  } catch (err) {
+    if (err?.name === 'AbortError') return { candidates: [], aborted: true };
     return { candidates: [], error: 'Network error reaching the Anthropic API — enter rates manually.' };
   }
 

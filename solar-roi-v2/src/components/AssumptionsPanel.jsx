@@ -30,7 +30,7 @@ const GROUPS = [
   ]],
   ['Financial', [
     ['discountRate', 'Discount rate', 0.005],
-    ['analysisYears', 'Horizon (yrs)', 1],
+    ['analysisYears', 'Horizon (yrs)', 1, 1],
     ['co2TonsPerKWh', 'CO₂ (tons/kWh)', 0.00001],
   ]],
 ];
@@ -43,16 +43,24 @@ export default function AssumptionsPanel({ assumptions, setAssumptions }) {
         <div key={group}>
           <h3 className="agroup">{group}</h3>
           <div className="row">
-            {fields.map(([key, label, step]) => (
+            {fields.map(([key, label, step, min]) => (
               <div className="field" key={key} style={{ minWidth: 130 }}>
                 <label>{label}</label>
                 <input
                   type="number"
                   step={step}
+                  min={min}
                   value={assumptions[key] ?? ''}
                   onChange={(e) => {
                     const raw = e.target.value;
-                    setAssumptions({ ...assumptions, [key]: raw === '' ? null : parseFloat(raw) || 0 });
+                    if (raw === '') {
+                      setAssumptions({ ...assumptions, [key]: null });
+                      return;
+                    }
+                    const n = parseFloat(raw);
+                    const parsed = Number.isFinite(n) ? n : 0;
+                    const next = min != null ? Math.max(min, parsed || min) : parsed;
+                    setAssumptions({ ...assumptions, [key]: next });
                   }}
                 />
               </div>

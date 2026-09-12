@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import Papa from 'papaparse';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+import { MONTHS, billsFromCsvRows } from '../../services/billCsv.js';
 
 export default function BillsPanel({ billMode, setBillMode, avgBill, setAvgBill, bills, setBills, rate, monthlyUsage }) {
   const fileRef = useRef(null);
@@ -17,20 +16,12 @@ export default function BillsPanel({ billMode, setBillMode, avgBill, setAvgBill,
       header: true,
       skipEmptyLines: true,
       complete: ({ data, meta }) => {
-        const cols = meta.fields || [];
-        const usageCol = cols.find((c) => /usage|kwh/i.test(c));
-        const costCol = cols.find((c) => /cost|amount|\$|bill/i.test(c));
-        if (!usageCol || !costCol) {
-          setParseError(`Couldn't find usage/cost columns. Found: ${cols.join(', ')}`);
+        const parsed = billsFromCsvRows(data, meta.fields || []);
+        if (parsed.error) {
+          setParseError(parsed.error);
           return;
         }
-        const rows = data.slice(0, 12);
-        if (rows.length < 12) {
-          setParseError(`CSV has ${rows.length} rows — 12 months are required.`);
-          return;
-        }
-        const num = (v) => parseFloat(String(v).replace(/[$,]/g, '')) || '';
-        setBills(bills.map((b, i) => ({ ...b, usage: String(num(rows[i][usageCol])), cost: String(num(rows[i][costCol])) })));
+        setBills(parsed.bills);
         setBillMode('detailed');
       },
       error: (err) => setParseError(err.message),

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { normalizeCandidate } from '../rateIntelligence.js';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { lookupUtilityRates, normalizeCandidate } from '../rateIntelligence.js';
 
 const touCandidate = (periods) => ({
   utility: 'Test Electric',
@@ -67,5 +67,19 @@ describe('normalizeCandidate', () => {
       rates: { standard: { type: 'flat', name: 'R', rate: 0.13 } },
     });
     expect(missing.coordinates).toBeNull();
+  });
+});
+
+describe('lookupUtilityRates abort', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns aborted instead of a network error so stale searches can be ignored', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    const r = await lookupUtilityRates('1 Main St', 'test-key', { signal: AbortSignal.abort() });
+    expect(r.aborted).toBe(true);
+    expect(r.error).toBeUndefined();
+    expect(r.candidates).toEqual([]);
   });
 });
