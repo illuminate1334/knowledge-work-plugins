@@ -64,7 +64,13 @@ export async function lookupUtilityRates(address, apiKey = import.meta.env?.VITE
     return { candidates: [], error: `Rate lookup failed (HTTP ${response.status}) — enter rates manually.` };
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    if (err?.name === 'AbortError') return { candidates: [], aborted: true };
+    return { candidates: [], error: 'Could not parse rate data — enter manually.' };
+  }
   if (data.stop_reason === 'refusal') {
     return { candidates: [], error: 'Rate lookup was declined — enter rates manually.' };
   }

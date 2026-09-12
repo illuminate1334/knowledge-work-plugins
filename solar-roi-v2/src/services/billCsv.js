@@ -33,17 +33,21 @@ export function parseMonthToken(value) {
   return null;
 }
 
+function looksLikeUsageOrCost(name) {
+  return /usage|kwh|cost|amount|\$/i.test(name);
+}
+
 function findMonthColumn(cols) {
   const ranked = [
     /^(month|mo)$/i,
-    /month/i,
+    /^month\s*(name|num(ber)?|#)?$/i,
     /^(date|period)$/i,
     /billing\s*(period|date|month)/i,
     /bill\s*date/i,
     /service\s*(month|period|date)/i,
   ];
   for (const re of ranked) {
-    const hit = cols.find((c) => re.test(c));
+    const hit = cols.find((c) => re.test(c) && !looksLikeUsageOrCost(c));
     if (hit) return hit;
   }
   return null;
@@ -54,7 +58,7 @@ function findBillCsvColumns(fields) {
   const monthCol = findMonthColumn(cols);
   const rest = cols.filter((c) => c !== monthCol);
   const usageCol = rest.find((c) => /usage|kwh/i.test(c)) || null;
-  const costCol = rest.find((c) => /cost|amount|\$|bill|total|charge/i.test(c)) || null;
+  const costCol = rest.find((c) => /cost|amount|\$|bill/i.test(c)) || null;
   return { monthCol, usageCol, costCol };
 }
 

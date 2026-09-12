@@ -76,8 +76,11 @@ describe('lookupUtilityRates abort', () => {
   });
 
   it('returns aborted instead of a network error so stale searches can be ignored', async () => {
-    vi.stubGlobal('fetch', () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
-    const r = await lookupUtilityRates('1 Main St', 'test-key', { signal: AbortSignal.abort() });
+    const signal = AbortSignal.abort();
+    const fetchMock = vi.fn(() => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await lookupUtilityRates('1 Main St', 'test-key', { signal });
+    expect(fetchMock.mock.calls[0][1].signal).toBe(signal);
     expect(r.aborted).toBe(true);
     expect(r.error).toBeUndefined();
     expect(r.candidates).toEqual([]);

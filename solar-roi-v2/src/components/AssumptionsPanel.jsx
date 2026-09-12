@@ -54,7 +54,7 @@ export default function AssumptionsPanel({ assumptions, setAssumptions }) {
                   onChange={(e) => {
                     const raw = e.target.value;
                     if (raw === '') {
-                      setAssumptions({ ...assumptions, [key]: null });
+                      setAssumptions({ ...assumptions, [key]: min != null ? min : null });
                       return;
                     }
                     const n = parseFloat(raw);

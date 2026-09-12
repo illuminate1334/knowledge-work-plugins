@@ -114,4 +114,12 @@ describe('billsFromCsvRows', () => {
     const { error } = billsFromCsvRows(orderedYear().slice(0, 6), ['Usage kWh', 'Cost']);
     expect(error).toMatch(/6 rows/);
   });
+
+  it('does not treat a Monthly kWh header as a month column', () => {
+    const rows = orderedYear({ usageCol: 'Monthly kWh', costCol: 'Cost' });
+    const { bills, error } = billsFromCsvRows(rows, ['Monthly kWh', 'Cost']);
+    expect(error).toBeUndefined();
+    expect(bills[0]).toMatchObject({ month: 'Jan', usage: '100', cost: '20' });
+    expect(bills[6]).toMatchObject({ month: 'Jul', usage: '106' });
+  });
 });

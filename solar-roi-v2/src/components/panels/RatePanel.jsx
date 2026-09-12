@@ -17,12 +17,15 @@ export default function RatePanel({ rateInfo, setRateInfo, bills, billMode, gate
     const request = requestTracker.current.start();
     setLoading(true);
     setError(null);
-    const result = await lookupUtilityRates(address, undefined, { signal: request.signal });
-    applyIfCurrent(request, result, (latest) => {
-      setLoading(false);
-      if (latest.error) setError(latest.error);
-      setCandidates(latest.candidates || []);
-    });
+    try {
+      const result = await lookupUtilityRates(address, undefined, { signal: request.signal });
+      applyIfCurrent(request, result, (latest) => {
+        if (latest.error) setError(latest.error);
+        setCandidates(latest.candidates || []);
+      });
+    } finally {
+      if (request.isCurrent()) setLoading(false);
+    }
   };
 
   const pick = (c, i) => {
@@ -66,7 +69,7 @@ export default function RatePanel({ rateInfo, setRateInfo, bills, billMode, gate
           <label>Address</label>
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, Columbia, MO" />
         </div>
-        <button className="primary" disabled={!address.trim() || loading} onClick={search}>
+        <button className="primary" disabled={!address.trim()} onClick={search}>
           {loading ? 'Searching…' : 'Look up'}
         </button>
         <button onClick={manual}>Manual</button>
