@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { lookupUtilityRates } from '../../services/rateIntelligence.js';
+import { applyIfCurrent, createLatestRequestTracker } from '../../services/latestRequest.js';
 import RateEditor from '../RateEditor.jsx';
 
 const BLANK_RATE = { name: 'Manual entry', type: 'flat', rate: 0.13, fixedCharge: 12 };
@@ -10,14 +11,21 @@ export default function RatePanel({ rateInfo, setRateInfo, bills, billMode, gate
   const [error, setError] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [selected, setSelected] = useState(null);
+  const requestTracker = useRef(createLatestRequestTracker());
 
   const search = async () => {
+    const request = requestTracker.current.start();
     setLoading(true);
     setError(null);
-    const result = await lookupUtilityRates(address);
-    setLoading(false);
-    if (result.error) setError(result.error);
-    setCandidates(result.candidates || []);
+    try {
+      const result = await lookupUtilityRates(address, undefined, { signal: request.signal });
+      applyIfCurrent(request, result, (latest) => {
+        if (latest.error) setError(latest.error);
+        setCandidates(latest.candidates || []);
+      });
+    } finally {
+      if (request.isCurrent()) setLoading(false);
+    }
   };
 
   const pick = (c, i) => {
@@ -61,7 +69,7 @@ export default function RatePanel({ rateInfo, setRateInfo, bills, billMode, gate
           <label>Address</label>
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, Columbia, MO" />
         </div>
-        <button className="primary" disabled={!address.trim() || loading} onClick={search}>
+        <button className="primary" disabled={!address.trim()} onClick={search}>
           {loading ? 'Searching…' : 'Look up'}
         </button>
         <button onClick={manual}>Manual</button>
